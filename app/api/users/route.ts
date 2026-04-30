@@ -1,47 +1,53 @@
 import { NextResponse } from "next/server";
-
-const users = Array.from({ length: 100 }).map((_, i) => ({
-  id: i + 1,
-  name: `User ${i + 1}`,
-  email: `user${i + 1}@test.com`,
-}));
+import DBConnection from "../../lib/db";
+import User from "../../model/user";
 
 export async function GET(req: Request) {
-  const url = new URL(req.url);
+  try {
+    await DBConnection();
 
-  const page = Number(url.searchParams.get("page") || 1);
-  const limit = Number(url.searchParams.get("limit") || 10);
-  const search = url.searchParams.get("search") || "";
-  const sortBy = url.searchParams.get("sortBy") || "id";
-  const order = url.searchParams.get("order") || "asc";
+    const url = new URL(req.url);
 
-  const token = req.headers.get("authorization");
-  if (!token) {
-    return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
-  }
+    const page = Number(url.searchParams.get("page") || 1);
+    const limit = Number(url.searchParams.get("limit") || 10);
+    const search = url.searchParams.get("search") || "";
+    const sortBy = url.searchParams.get("sortBy") || "id";
+    const order = url.searchParams.get("order") === "desc" ? -1 : 1;
 
-  let filtered = users.filter((u) =>
-    u.name.toLowerCase().includes(search.toLowerCase())
-  );
-
-  filtered.sort((a: any, b: any) => {
-    const valA = a[sortBy];
-    const valB = b[sortBy];
-
-    if (typeof valA === "string") {
-      return order === "asc"
-        ? valA.localeCompare(valB)
-        : valB.localeCompare(valA);
-    } else {
-      return order === "asc" ? valA - valB : valB - valA;
+    const token = req.headers.get("authorization");
+    if (!token) {
+      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
     }
-  });
 
-  const start = (page - 1) * limit;
-  const paginated = filtered.slice(start, start + limit);
+    const query: any = {};
 
-  return NextResponse.json({
-    data: paginated,
-    total: filtered.length,
-  });
+    if (search) {
+      query.name = { $regex: search, $options: "i" };
+    }
+
+    const sort: any = {};
+    sort[sortBy] = order;
+
+    const skip = (page - 1) * limit;
+
+    const users = await User.find(query)
+      .select("-password") 
+      .sort(sort)
+      .skip(skip)
+      .limit(limit);
+
+    const total = await User.countDocuments(query);
+
+    return NextResponse.json({
+      data: users,
+      total,
+    });
+
+  } catch (error) {
+    console.log(error);
+    return NextResponse.json(
+      { message: "Server error" },
+      { status: 500 }
+    );
+  }
 }
