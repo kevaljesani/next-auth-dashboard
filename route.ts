@@ -1,47 +1,43 @@
 import { NextResponse } from "next/server";
-import DBConnection from "../../lib/db";
 import User from "../../model/user";
+import DBConnection from "../../lib/db";
 
-export async function GET(req: Request) {
+export async function POST(req: Request) {
   try {
     await DBConnection();
 
-    const url = new URL(req.url);
+    const body = await req.json();
 
-    const page = Number(url.searchParams.get("page") || 1);
-    const limit = Number(url.searchParams.get("limit") || 10);
-    const search = url.searchParams.get("search") || "";
-    const sortBy = url.searchParams.get("sortBy") || "id";
-    const order = url.searchParams.get("order") === "desc" ? -1 : 1;
+    // console.log("BODY:", body);
 
-    const token = req.headers.get("authorization");
-    if (!token) {
-      return NextResponse.json({ message: "Unauthorized" }, { status: 401 });
+    const email = body.email?.trim().toLowerCase();
+    const password = body.password;
+
+    const user = await User.findOne({ email });
+
+    // console.log("FOUND USER:", user);
+
+    if (!user) {
+      return NextResponse.json(
+        { message: "User not found" },
+        { status: 404 }
+      );
     }
 
-    const query: any = {};
-
-    if (search) {
-      query.name = { $regex: search, $options: "i" };
+    if (user.password !== password) {
+      return NextResponse.json(
+        { message: "Invalid password" },
+        { status: 401 }
+      );
     }
-
-    const sort: any = {};
-    sort[sortBy] = order;
-
-    const skip = (page - 1) * limit;
-
-    const users = await User.find(query)
-      .select("-password") 
-      .sort(sort)
-      .skip(skip)
-      .limit(limit);
-
-    const total = await User.countDocuments(query);
-
-    return NextResponse.json({
-      data: users,
-      total,
-    });
+return NextResponse.json({
+  message: "Login success",
+  user: {
+    id: user._id,
+    email: user.email,
+    name: user.name,
+  },
+});
 
   } catch (error) {
     console.log(error);
